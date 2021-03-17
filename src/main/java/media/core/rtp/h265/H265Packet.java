@@ -47,19 +47,19 @@ public class H265Packet extends RtpPacket {
         isDonlUsing = false;
         isDondUsing = false;
 
-        System.out.println("Raw Data Length: " + this.rawPayload.length);
-        System.out.println("RTP Version: " + this.getVersion());
-        System.out.println("SSRC: " + this.getSyncSource());
-        System.out.println("Payload Type: " + this.getPayloadType());
-        System.out.println("Payload Length: " + this.getPayloadLength());
-        System.out.println("Payload: " + Arrays.toString(this.rawPayload));
+        System.out.println("\tRaw Data Length: " + this.rawPayload.length);
+        System.out.println("\tRTP Version: " + this.getVersion());
+        System.out.println("\tSSRC: " + this.getSyncSource());
+        System.out.println("\tPayload Type: " + this.getPayloadType());
+        System.out.println("\tPayload Length: " + this.getPayloadLength());
+        System.out.println("\tPayload: " + Arrays.toString(this.rawPayload));
 
         unPackHeader();
 
         switch (type) {
             case 48:
                 System.out.println("AP is detected.\n");
-                unPackAp();
+                unPackAp(2);
                 break;
             case 49:
                 System.out.println("FU Packet is detected.\n");
@@ -103,19 +103,10 @@ public class H265Packet extends RtpPacket {
         return rawPayload;
     }
 
-    private static String bytesToBinaryString(Byte b) {
-        StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < 8; i++) {
-            builder.append(((0x80 >>> i) & b) == 0 ? '0' : '1');
-        }
-
-        return builder.toString();
-    }
-
     public void setForbidden() {
         byte forbiddenByte = rawPayload[0];
         forbidden = forbiddenByte & 0b10000000; // 0x80
-        System.out.println("Forbidden: " + forbidden + " (" + bytesToBinaryString(forbiddenByte) + ")");
+        System.out.println("\tForbidden: " + forbidden + " (" + bytesToBinaryString(forbiddenByte) + ")");
     }
 
     public int getForbidden() {
@@ -125,7 +116,7 @@ public class H265Packet extends RtpPacket {
     public void setType() {
         byte typeByte = rawPayload[0];
         type = typeByte & 0b01111110;
-        System.out.println("Type: " + checkType() + " (" + type + ", " + bytesToBinaryString(typeByte) + ")");
+        System.out.println("\tType: " + checkType() + " (" + type + ", " + bytesToBinaryString(typeByte) + ")");
     }
 
     public long getType() {
@@ -136,15 +127,13 @@ public class H265Packet extends RtpPacket {
         byte res = 0b000000000;
         byte[] lidBytes = new byte[2];
         System.arraycopy(rawPayload, 0, lidBytes, 0, 2);
-        System.out.println("1: " + bytesToBinaryString(lidBytes[0]) + ", 2: " + bytesToBinaryString(lidBytes[1]));
         byte temp1 = (byte) (lidBytes[0] & 0b00000001);
         byte temp2 = (byte) (lidBytes[1] & 0b11111000);
-        System.out.println("1: " + bytesToBinaryString(temp1) + ", 2: " + bytesToBinaryString(temp2));
         res &= temp1;
         res <<= 7; // shift left 7 bits
         res &= temp2;
         lid = res;
-        System.out.println("Layer ID: " + lid);
+        System.out.println("\tLayer ID: " + lid + " (" + bytesToBinaryString(temp1) + bytesToBinaryString(temp2) + ")");
     }
 
     public long getLid() {
@@ -154,7 +143,7 @@ public class H265Packet extends RtpPacket {
     public void setTid() {
         byte tidByte = rawPayload[1];
         tid = tidByte & 0b00000111;
-        System.out.println("Temporal ID: " + tid + " (" + bytesToBinaryString(tidByte) + ")");
+        System.out.println("\tTemporal ID: " + tid + " (" + bytesToBinaryString(tidByte) + ")");
     }
 
     public int getTid() {
@@ -188,9 +177,8 @@ public class H265Packet extends RtpPacket {
      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
      */
 
-    public void unPackAp () {
-        final int NALU_COUNT = 2;
-        List<byte[]> naluList = new ArrayList<>(NALU_COUNT);
+    public void unPackAp (int naluCount) {
+        List<byte[]> naluList = new ArrayList<>(naluCount);
         //long timestamp = this.getTimestamp();
         //int len = this.getPayloadLength();
 
@@ -199,45 +187,49 @@ public class H265Packet extends RtpPacket {
         byte[] secondNaluBuf;
         System.arraycopy(rawPayload, RTP_HEVC_PAYLOAD_HEADER_SIZE, firstNaluBuf, 0, rawPayload.length - RTP_HEVC_PAYLOAD_HEADER_SIZE); // ignore PayloadHdr
 
+        int i = 0;
         int curLen = 0;
-        for (int i = 0; i < NALU_COUNT; i++) {
+        int curNaluSize = 0;
+        while (true) {
             byte[] curNalu;
             if (i == 0) {
-                int curNaluSize = getNaluSize(firstNaluBuf, 0);
+                curNaluSize = getNaluSize(firstNaluBuf, 0);
+                System.out.println("\tCur NALU size: " + curNaluSize);
+
                 curNalu = new byte[curNaluSize]; // find first nalu size
                 System.arraycopy(firstNaluBuf, RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE, curNalu, 0, curNaluSize); // nalu hdr + body
+
                 naluList.add(curNalu); // add to list
                 curLen = RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE + curNaluSize; // DONL size + NALU size + NALU len(hdr + body)
-                System.out.println("First NALU len: " + curLen + " bytes, remaining: " + (firstNaluBuf.length - curLen) + " bytes");
+                System.out.println("\tFirst NALU len: " + curLen + " bytes, remaining: " + (firstNaluBuf.length - curLen) + " bytes");
             } else {
-                if (curLen >= firstNaluBuf.length) {
-                    System.out.println("Fail to unpack the AP. Second NALU is not exist.");
-                    return;
+                curNaluSize = getNaluSize(firstNaluBuf, curLen);
+                if (curNaluSize == 0) {
+                    break;
                 }
 
-                int curNaluSize = getNaluSize(firstNaluBuf, curLen);
+                System.out.println("\tCur NALU size: " + curNaluSize);
                 secondNaluBuf = new byte[firstNaluBuf.length - curLen];
                 System.arraycopy(firstNaluBuf, curLen, secondNaluBuf, 0, firstNaluBuf.length - curLen);
 
                 curNalu = new byte[curNaluSize];
                 System.arraycopy(secondNaluBuf, RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE, curNalu, 0, curNaluSize);
                 naluList.add(curNalu);
+
                 curLen += RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE + curNaluSize; // DONL size + NALU size + NALU len(hdr + body)
-                System.out.println("Second NALU len: " + curLen + " bytes, remaining: " + (firstNaluBuf.length - curLen) + " bytes");
+                System.out.println("\tSecond NALU len: " + curLen + " bytes, remaining: " + (firstNaluBuf.length - curLen) + " bytes");
             }
 
-            System.out.println("Cur NALU: " + Arrays.toString(curNalu));
+            System.out.println("\tCur NALU: " + Arrays.toString(curNalu));
+            i++;
         }
+        System.out.println("Success to unpack the AP.\n");
     }
 
     private int getNaluSize (byte[] buf, int startIndex) {
         byte[] lenBytes = new byte[2];
         System.arraycopy(buf, startIndex, lenBytes, 0, 2);
-        System.out.println("LenBytes: "+ Arrays.toString(lenBytes));
-
-        int len = (lenBytes[0] << 8) + (lenBytes[1] & 0xff);
-        System.out.println("Cur NALU size: " + len);
-        return len;
+        return (lenBytes[0] << 8) + (lenBytes[1] & 0xff);
     }
 
     public void packAp (byte[] nalu1, byte[] nalu2) {
@@ -255,8 +247,8 @@ public class H265Packet extends RtpPacket {
         System.arraycopy(nalu2, RtpPacket.FIXED_HEADER_SIZE, rtpPayloadNalu2, 0, nalu2.length - RtpPacket.FIXED_HEADER_SIZE);
 
         System.out.println("Starting to aggregate the packets...");
-        System.out.println("NALU1: " + Arrays.toString(rtpPayloadNalu1) + " (len=" + rtpPayloadNalu1.length + ")");
-        System.out.println("NALU2: " + Arrays.toString(rtpPayloadNalu2) + " (len=" + rtpPayloadNalu2.length + ")");
+        System.out.println("\tNALU1: " + Arrays.toString(rtpPayloadNalu1) + " (len=" + rtpPayloadNalu1.length + ")");
+        System.out.println("\tNALU2: " + Arrays.toString(rtpPayloadNalu2) + " (len=" + rtpPayloadNalu2.length + ")");
 
         byte[] apData = new byte[RtpPacket.FIXED_HEADER_SIZE + nalu1.length + nalu2.length + 8]; // 8 bytes:
         System.arraycopy(rtpHdrNalu1, 0, apData, 0, RtpPacket.FIXED_HEADER_SIZE);
@@ -266,8 +258,6 @@ public class H265Packet extends RtpPacket {
 
         apData[2 + index] = (byte) (rtpPayloadNalu1.length >> 8);
         apData[3 + index] = (byte) (rtpPayloadNalu1.length);
-        System.out.println(apData[2 + index] + "(" + bytesToBinaryString(apData[2 + index]) + "), "
-                + apData[3 + index] + "(" + bytesToBinaryString(apData[3 + index]) + ")");
 
         apData[rtpPayloadNalu1.length + 4 + index] = (byte) (rtpPayloadNalu2.length >> 8);
         apData[rtpPayloadNalu1.length + 5 + index] = (byte) (rtpPayloadNalu2.length & 0xff);
@@ -275,7 +265,7 @@ public class H265Packet extends RtpPacket {
         System.arraycopy(rtpPayloadNalu1, 0, apData, 4 + index, rtpPayloadNalu1.length);
         System.arraycopy(rtpPayloadNalu2, 0, apData, 6 + index + rtpPayloadNalu1.length, rtpPayloadNalu2.length);
 
-        System.out.println("AP: " + Arrays.toString(apData));
+        System.out.println("\tAP: " + Arrays.toString(apData));
         System.out.println("Done.");
 
         wrap(apData);
@@ -335,6 +325,15 @@ public class H265Packet extends RtpPacket {
         }
 
         return typeStr;
+    }
+
+    private static String bytesToBinaryString(Byte b) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < 8; i++) {
+            builder.append(((0x80 >>> i) & b) == 0 ? '0' : '1');
+        }
+
+        return builder.toString();
     }
 
 }
