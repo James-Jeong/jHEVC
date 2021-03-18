@@ -1,11 +1,17 @@
 import media.core.rtp.RtpPacket;
+import media.core.rtp.h265.H265Decoder;
+import media.core.rtp.h265.H265Encoder;
 import media.core.rtp.h265.H265Packet;
+import media.core.rtp.h265.base.FUPosition;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.util.Arrays;
 
 public class HEVCTest {
+
+    H265Encoder h265Encoder = new H265Encoder();
+    H265Decoder h265Decoder = new H265Decoder();
 
     @BeforeClass
     public static void setUp ( ) {
@@ -14,20 +20,30 @@ public class HEVCTest {
 
     @Test
     public void NALUtest () {
-        H265Packet hevcPacket = new H265Packet(RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        hevcPacket.wrap(rawRtpData);
-        hevcPacket.handle();
+        H265Packet hevcPacket = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        h265Decoder.handle(hevcPacket);
     }
 
     @Test
     public void APtest () {
-        H265Packet hevcPacket = new H265Packet(RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        hevcPacket.packAp(rawRtpData, rawNALUData);
-        hevcPacket.handle();
-
+        H265Packet hevcPacket = h265Encoder.packAp(rawRtpData, rawNALUData);
+        h265Decoder.handle(hevcPacket);
     }
 
+    @Test
+    public void FUTest () {
+        H265Packet hevcPacket1 = new H265Packet(rawFuData1, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        H265Packet fu1 = h265Encoder.packFu(hevcPacket1, FUPosition.START);
+        h265Decoder.handle(fu1);
 
+        H265Packet hevcPacket2 = new H265Packet(rawFuData2, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        H265Packet fu2 = h265Encoder.packFu(hevcPacket2, FUPosition.MIDDLE);
+        h265Decoder.handle(fu2);
+
+        H265Packet hevcPacket3 = new H265Packet(rawFuData3, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        H265Packet fu3 = h265Encoder.packFu(hevcPacket3, FUPosition.END);
+        h265Decoder.handle(fu3);
+    }
 
 
 
@@ -227,6 +243,18 @@ public class HEVCTest {
     byte[] rawRtpData2 = {
             (byte) 0xa0, (byte) 0x60, (byte) 0x12, (byte) 0x74, (byte) 0xd8, (byte) 0x3a, (byte) 0x01, (byte) 0x7e, (byte) 0x3d, (byte) 0x20, (byte) 0x83, (byte) 0x45, (byte) 0x4e, (byte) 0x01, (byte) 0xe5, (byte) 0x04,
             (byte) 0xd3, (byte) 0x63, (byte) 0x00, (byte) 0x00, (byte) 0x80, (byte) 0x00, (byte) 0x00, (byte) 0x03
+    };
+
+    byte[] rawFuData1 = {
+
+    };
+
+    byte[] rawFuData2 = {
+
+    };
+
+    byte[] rawFuData3 = {
+
     };
 
 }
