@@ -1,10 +1,7 @@
 package media.core.rtp.h265;
 
 import media.core.rtp.RtpPacket;
-import media.core.rtp.h265.base.FUPosition;
-
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 
 public class H265Packet extends RtpPacket {
 
@@ -89,4 +86,19 @@ public class H265Packet extends RtpPacket {
         this.tid = tid;
     }
 
+    public boolean isDonlUsing() {
+        return isDonlUsing;
+    }
+
+    public void setDonlUsing(boolean donlUsing) {
+        isDonlUsing = donlUsing;
+    }
+
+    public boolean isDondUsing() {
+        return isDondUsing;
+    }
+
+    public void setDondUsing(boolean dondUsing) {
+        isDondUsing = dondUsing;
+    }
 }

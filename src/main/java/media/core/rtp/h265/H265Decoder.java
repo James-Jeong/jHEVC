@@ -1,6 +1,7 @@
 package media.core.rtp.h265;
 
 import media.core.rtp.RtpPacket;
+import media.core.rtp.h265.base.FUPosition;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -8,6 +9,9 @@ import java.util.Collections;
 import java.util.List;
 
 public class H265Decoder {
+
+    private FUPosition curFuPosition = FUPosition.NONE;
+    private List<H265Packet> fuList = new ArrayList<>();
 
     public H265Decoder() {
         // Nothing
@@ -32,6 +36,9 @@ public class H265Decoder {
             case 49:
                 System.out.println("FU Packet is detected.\n");
                 H265Packet unPackedFu = unPackFu(h265Packet);
+                if (unPackedFu == null) {
+                    System.out.println("Not yet.");
+                }
                 break;
             case 50:
                 System.out.println("PACI Packet is detected.\n");
@@ -56,29 +63,30 @@ public class H265Decoder {
      *      Total 16 bits > 2 bytes
      */
 
-    public void unPackHeader (H265Packet h265Packet) {
-        if (h265Packet.getRawPayload() == null) { return; }
+    private void unPackHeader (H265Packet h265Packet) {
+        if (h265Packet.getRawData() == null) { return; }
         setForbidden(h265Packet);
         setType(h265Packet);
         setLid(h265Packet);
         setTid(h265Packet);
     }
 
-    public void setForbidden(H265Packet h265Packet) {
+    private void setForbidden(H265Packet h265Packet) {
         byte forbiddenByte = h265Packet.getRawPayload()[0];
         int forbidden = forbiddenByte & 0b10000000; // 0x80
         System.out.println("\tForbidden: " + forbidden + " (" + bytesToBinaryString(forbiddenByte) + ")");
         h265Packet.setForbidden(forbidden);
     }
 
-    public void setType(H265Packet h265Packet) {
+    private void setType(H265Packet h265Packet) {
         byte typeByte = h265Packet.getRawPayload()[0];
         int type = typeByte & 0b01111110;
+        type >>= 1;
         System.out.println("\tType: " + checkType(type) + " (" + type + ", " + bytesToBinaryString(typeByte) + ")");
         h265Packet.setType(type);
     }
 
-    public void setLid(H265Packet h265Packet) {
+    private void setLid(H265Packet h265Packet) {
         byte res = 0b000000000;
         byte[] lidBytes = new byte[2];
         System.arraycopy(h265Packet.getRawPayload(), 0, lidBytes, 0, 2);
@@ -92,7 +100,7 @@ public class H265Decoder {
         h265Packet.setLid(lid);
     }
 
-    public void setTid(H265Packet h265Packet) {
+    private void setTid(H265Packet h265Packet) {
         byte tidByte = h265Packet.getRawPayload()[1];
         int tid = tidByte & 0b00000111;
         System.out.println("\tTemporal ID: " + tid + " (" + bytesToBinaryString(tidByte) + ")");
@@ -126,7 +134,7 @@ public class H265Decoder {
      *      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
      */
 
-    public List<byte[]> unPackAp (H265Packet h265Packet) {
+    private List<byte[]> unPackAp (H265Packet h265Packet) {
         List<byte[]> naluList = new ArrayList<>();
         //long timestamp = this.getTimestamp();
         //int len = this.getPayloadLength();
@@ -212,23 +220,76 @@ public class H265Decoder {
      *    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
      */
 
-    public H265Packet unPackFu (H265Packet h265Packet) {
-        byte[] rawPayload = h265Packet.getRawPayload();
+    /**
+     * 1. Remove the 12 bytes RTP header and 3 bytes of FU header.
+     * 2. Combine all the FU packets till the end packet is found/received to from a Video Encoded frame.
+     * 3. The Combined all packets (if multiple packets form a frame) to form Video Frame, it can be feed to the decoder.
+     */
+    private H265Packet unPackFu (H265Packet h265Packet) {
+        byte[] rawPayload = h265Packet.getRawData();
         if (rawPayload == null || rawPayload.length == 0) { return null; }
         if (rawPayload.length <= 2) { return null; }
 
-        //H265Packet hevcPacket = new H265Packet(RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        byte[] totalData = new byte[RtpPacket.RTP_PACKET_MAX_SIZE];
+        int packetLength = h265Packet.getLength();
+        int payloadLength = packetLength - RtpPacket.FIXED_HEADER_SIZE;
+        byte[] rtpHdrNalu = new byte[RtpPacket.FIXED_HEADER_SIZE];
+        byte[] rtpPayloadNalu = new byte[payloadLength];
+        System.arraycopy(rawPayload, 0, rtpHdrNalu, 0, RtpPacket.FIXED_HEADER_SIZE);
+        System.arraycopy(rawPayload, RtpPacket.FIXED_HEADER_SIZE, rtpPayloadNalu, 0, payloadLength);
 
-        // TODO: Aggregate FUs
+        byte[] header = new byte[3];
+        System.arraycopy(rtpPayloadNalu, 0, header, 0, 3);
+        byte fuHeader = header[2];
+        int type = fuHeader & 0b00111111; // expected: NALU Type
+        int start = fuHeader & 0b10000000; // expected: 128 > S = 1
+        int end = fuHeader & 0b01000000; // expected: 64 > E = 1
+        if (start == 128) {
+            this.curFuPosition = FUPosition.START;
+        } else if (end == 0) {
+            this.curFuPosition = FUPosition.MIDDLE;
+        } else {
+            this.curFuPosition = FUPosition.END;
+        }
 
+        byte[] fuPayload = new byte[payloadLength - 3];
+        System.arraycopy(rtpPayloadNalu, 3, fuPayload, 0, payloadLength - 3);
 
-        //hevcPacket.wrap(totalData);
-        //return hevcPacket;
+        if (this.curFuPosition == FUPosition.END) {
+            int totalLength = 0;
+            for (H265Packet fuPacket : fuList) {
+                totalLength += fuPacket.getLength();
+            }
+
+            byte[] totalData = new byte[totalLength];
+            int accumLength = 0;
+            for (H265Packet fuPacket : fuList) {
+                byte[] data = fuPacket.getRawData();
+                System.arraycopy(data, 0, totalData, accumLength, data.length);
+                accumLength += data.length;
+            }
+
+            System.out.println("Total Aggregated FU: " + Arrays.toString(totalData) + ", len: " + totalData.length);
+            H265Packet totalPacket = new H265Packet(totalData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+            this.fuList.clear();
+            return totalPacket;
+        } else if (this.curFuPosition == FUPosition.START) {
+            byte[] rtpPacketExceptFuHeader = new byte[packetLength - 3];
+            System.arraycopy(rtpHdrNalu, 0, rtpPacketExceptFuHeader, 0, RtpPacket.FIXED_HEADER_SIZE);
+            System.arraycopy(fuPayload, 0, rtpPacketExceptFuHeader, RtpPacket.FIXED_HEADER_SIZE, payloadLength - 3);
+
+            H265Packet fuPacket = new H265Packet(rtpPacketExceptFuHeader, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+            this.fuList.add(fuPacket);
+        } else {
+            H265Packet fuPacket = new H265Packet(fuPayload, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+            this.fuList.add(fuPacket);
+        }
+
         return null;
     }
 
+
     ////////////////////////////////////////////////////////////////////
+    // Util Functions
 
     private int getNaluSize (byte[] buf, int startIndex) {
         byte[] lenBytes = new byte[2];
@@ -249,7 +310,7 @@ public class H265Decoder {
         String typeStr;
         switch (type) {
             case 0: typeStr = "TRAIL_N"; break;
-            case 1: typeStr = "TRAIL_R"; break;
+            case 1: typeStr = "TRAIL_R"; break; // General
             case 2: typeStr = "TSA_N"; break;
             case 3: typeStr = "TSA_R"; break;
             case 4: typeStr = "STSA_N"; break;
@@ -267,8 +328,8 @@ public class H265Decoder {
             case 16: typeStr = "BLA_W_LP"; break;
             case 17: typeStr = "BLA_W_RADL"; break;
             case 18: typeStr = "BLA_N_LP"; break;
-            case 19: typeStr = "IDR_W_RADL"; break;
-            case 20: typeStr = "KDR_N_LP"; break;
+            case 19: typeStr = "IDR_W_RADL"; break; // General
+            case 20: typeStr = "KDR_N_LP"; break; // General
             case 21: typeStr = "CRA_NUT"; break;
             case 22: typeStr = "RSV_IRAP_VCL22"; break;
             case 23: typeStr = "RSV_IRAP_VCL23"; break;

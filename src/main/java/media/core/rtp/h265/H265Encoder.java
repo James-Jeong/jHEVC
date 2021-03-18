@@ -34,7 +34,7 @@ public class H265Encoder {
         byte[] apData = new byte[RtpPacket.FIXED_HEADER_SIZE + nalu1.length + nalu2.length + 8]; // 8 bytes:
         System.arraycopy(rtpHdrNalu1, 0, apData, 0, RtpPacket.FIXED_HEADER_SIZE);
         int index = RtpPacket.FIXED_HEADER_SIZE;
-        apData[index] = 48;
+        apData[index] = 48 << 1;
         apData[1 + index] = 1;
 
         apData[2 + index] = (byte) (rtpPayloadNalu1.length >> 8);
@@ -55,15 +55,40 @@ public class H265Encoder {
     ////////////////////////////////////////////////////////////////////
 
     public H265Packet packFu (H265Packet h265Packet, FUPosition fuPosition) {
-        byte[] buffer = new byte[h265Packet.getLength()];
+        byte[] rawPayload = h265Packet.getRawData();
+        if (rawPayload == null || rawPayload.length == 0) { return null; }
+
+        int packetLength = h265Packet.getLength();
+        int payloadLength = packetLength - RtpPacket.FIXED_HEADER_SIZE;
+
+        byte[] buffer = new byte[packetLength + 3];
+        byte[] rtpHdrNalu = new byte[RtpPacket.FIXED_HEADER_SIZE];
+        byte[] rtpPayloadNalu = new byte[payloadLength];
+        System.arraycopy(rawPayload, 0, rtpHdrNalu, 0, RtpPacket.FIXED_HEADER_SIZE);
+        System.out.println("rtpHdrNalu: " + Arrays.toString(rtpHdrNalu));
+        System.arraycopy(rawPayload, RtpPacket.FIXED_HEADER_SIZE, rtpPayloadNalu, 0, payloadLength);
+        System.out.println("rtpPayloadNalu: " + Arrays.toString(rtpPayloadNalu));
 
         byte[] header = new byte[3];
-        header[0] = 49;
+        header[0] = 49 << 1;
         header[1] = 1;
-        header[2] = (byte) h265Packet.getType();
-        header[2] += 0x80;
+        if (fuPosition == FUPosition.START) {
+            header[2] = (byte) h265Packet.getType();
+            header[2] += 0b10000000; // S = 1
+        } else if (fuPosition == FUPosition.MIDDLE) {
+            header[2] = (byte) (h265Packet.getType() & 0b00111111);
+            // S = 0, E = 0
+        } else {
+            header[2] = (byte) h265Packet.getType();
+            header[2] += 0b01000000; // E = 1
+        }
 
+        System.arraycopy(rtpHdrNalu, 0, buffer, 0, RtpPacket.FIXED_HEADER_SIZE);
+        System.arraycopy(header, 0, buffer, RtpPacket.FIXED_HEADER_SIZE, 3);
 
+        //rtpPayloadNalu[0] = 49;
+        System.arraycopy(rtpPayloadNalu, 0, buffer, RtpPacket.FIXED_HEADER_SIZE + 3, payloadLength);
+        System.out.println("Packed FU: " + Arrays.toString(buffer) + ", len: " + buffer.length);
 
         return new H265Packet(buffer, RtpPacket.RTP_PACKET_MAX_SIZE, true);
     }
