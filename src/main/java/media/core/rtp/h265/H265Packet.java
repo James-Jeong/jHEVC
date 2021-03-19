@@ -1,9 +1,16 @@
 package media.core.rtp.h265;
 
+import com.sun.tools.javac.util.ArrayUtils;
 import media.core.rtp.RtpPacket;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 public class H265Packet extends RtpPacket {
+
+    private static final Logger logger = LoggerFactory.getLogger(H265Packet.class);
 
     public static final int RTP_HEVC_PAYLOAD_HEADER_SIZE = 2;
     public static final int RTP_HEVC_FU_HEADER_SIZE = 1;
@@ -31,7 +38,10 @@ public class H265Packet extends RtpPacket {
     }
 
     public void initialize (byte[] data) {
-        if (data == null || data.length == 0) { return; }
+        if (data == null || data.length == 0) {
+            logger.warn("Packet raw data is null or empty. Fail to initialize packet.");
+            return;
+        }
 
         this.wrap(data);
         this.getPayload(this.getRawData());

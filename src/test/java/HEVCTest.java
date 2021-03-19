@@ -6,8 +6,6 @@ import media.core.rtp.h265.base.FUPosition;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.util.Arrays;
-
 public class HEVCTest {
 
     H265Encoder h265Encoder = new H265Encoder();
@@ -20,6 +18,15 @@ public class HEVCTest {
 
     @Test
     public void TotalTest () {
+        NormalTest();
+        AbnormalTest();
+    }
+
+    ///////////////////////////////////////////////////
+    // Normal Test
+
+    @Test
+    public void NormalTest () {
         NALUtest();
         VPStest();
         SPStest();
@@ -81,6 +88,40 @@ public class HEVCTest {
         h265Decoder.handle(fu3);
     }
 
+    ///////////////////////////////////////////////////
+    // Abnormal Test
+
+    @Test
+    public void AbnormalTest () {
+        NALUFailtest1_payload_is_null();
+        NALUFailtest2_payload_length_0();
+    }
+
+    @Test
+    public void NALUFailtest1_payload_is_null () {
+        H265Packet hevcPacket = new H265Packet(null, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+    }
+
+    @Test
+    public void NALUFailtest2_payload_length_0 () {
+        byte[] tempData = new byte[0];
+        H265Packet hevcPacket = new H265Packet(tempData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+    }
+
+    @Test
+    public void FUFailTest1_Unexpected_Position_Error_START_START () {
+        H265Packet hevcPacket1 = new H265Packet(rawFuData1, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        H265Packet fu1 = h265Encoder.packFu(hevcPacket1, FUPosition.START);
+        h265Decoder.handle(fu1);
+
+        H265Packet hevcPacket2 = new H265Packet(rawFuData2, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        H265Packet fu2 = h265Encoder.packFu(hevcPacket2, FUPosition.MIDDLE);
+        h265Decoder.handle(fu2);
+
+        H265Packet hevcPacket3 = new H265Packet(rawFuData3, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        H265Packet fu3 = h265Encoder.packFu(hevcPacket3, FUPosition.END);
+        h265Decoder.handle(fu3);
+    }
 
     ///////////////////////////////////////////////////
 
