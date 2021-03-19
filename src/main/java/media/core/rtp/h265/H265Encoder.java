@@ -5,7 +5,9 @@ import media.core.rtp.h265.base.FUPosition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 public class H265Encoder {
 
@@ -17,6 +19,7 @@ public class H265Encoder {
 
     ////////////////////////////////////////////////////////////////////
 
+    @Deprecated
     public H265Packet packAp (byte[] nalu1, byte[] nalu2) {
         logger.info("Starting to pack AP...");
 
@@ -35,8 +38,8 @@ public class H265Encoder {
         System.arraycopy(nalu1, RtpPacket.FIXED_HEADER_SIZE, rtpPayloadNalu1, 0, nalu1.length - RtpPacket.FIXED_HEADER_SIZE);
 
         byte[] rtpPayloadNalu2 = new byte[nalu2.length - RtpPacket.FIXED_HEADER_SIZE];
-        byte[] rtpHdrNalu2 = new byte[RtpPacket.FIXED_HEADER_SIZE];
-        System.arraycopy(nalu2, 0, rtpHdrNalu2, 0, RtpPacket.FIXED_HEADER_SIZE);
+        //byte[] rtpHdrNalu2 = new byte[RtpPacket.FIXED_HEADER_SIZE];
+        //System.arraycopy(nalu2, 0, rtpHdrNalu2, 0, RtpPacket.FIXED_HEADER_SIZE);
         System.arraycopy(nalu2, RtpPacket.FIXED_HEADER_SIZE, rtpPayloadNalu2, 0, nalu2.length - RtpPacket.FIXED_HEADER_SIZE);
 
         logger.debug("\tNALU1: {} (len={})", rtpPayloadNalu1, rtpPayloadNalu1.length);
@@ -61,6 +64,81 @@ public class H265Encoder {
         logger.info("Success to pack AP.");
 
         return new H265Packet(apData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+    }
+
+    public H265Packet packApByList (List<H265Packet> naluList) {
+        logger.info("Starting to pack AP...");
+
+        if (naluList == null || naluList.isEmpty()) {
+            logger.warn("AP List is null or empty. Fail to pack AP.");
+            return null;
+        }
+
+        int totalDataLen = 0;
+        List<byte[]> apList = new ArrayList<>();
+        for (H265Packet h265Packet : naluList) {
+            byte[] nalu = h265Packet.getRawData();
+            if (nalu == null || nalu.length == 0) {
+                logger.warn("Payload is null. Fail to pack AP.");
+                return null;
+            }
+            if (nalu.length <= RtpPacket.FIXED_HEADER_SIZE) {
+                logger.warn("Payload is too short. Fail to pack AP.");
+                return null;
+            }
+
+            byte[] rtpPayloadNalu = new byte[nalu.length - RtpPacket.FIXED_HEADER_SIZE];
+            byte[] rtpHdrNalu = new byte[RtpPacket.FIXED_HEADER_SIZE];
+            System.arraycopy(nalu, 0, rtpHdrNalu, 0, RtpPacket.FIXED_HEADER_SIZE);
+            System.arraycopy(nalu, RtpPacket.FIXED_HEADER_SIZE, rtpPayloadNalu, 0, nalu.length - RtpPacket.FIXED_HEADER_SIZE);
+
+            byte[] apData;
+            int index;
+
+            if (totalDataLen == 0) {
+                apData = new byte[RtpPacket.FIXED_HEADER_SIZE + rtpPayloadNalu.length +
+                        H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE + H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE];
+                System.arraycopy(rtpHdrNalu, 0, apData, 0, RtpPacket.FIXED_HEADER_SIZE);
+                index = RtpPacket.FIXED_HEADER_SIZE;
+
+                apData[index] = 48 << 1;
+                apData[1 + index] = 1;
+                apData[2 + index] = (byte) (rtpPayloadNalu.length >> 8);
+                apData[3 + index] = (byte) (rtpPayloadNalu.length);
+                System.arraycopy(rtpPayloadNalu, 0, apData,
+                        H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE + H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE + index,
+                        rtpPayloadNalu.length);
+            } else {
+                index = 0;
+                apData = new byte[rtpPayloadNalu.length + H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE];
+                apData[0] = (byte) (rtpPayloadNalu.length >> 8);
+                apData[1] = (byte) (rtpPayloadNalu.length);
+                System.arraycopy(rtpPayloadNalu, 0, apData, H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE + index, rtpPayloadNalu.length);
+            }
+
+            apList.add(apData);
+
+            logger.debug("\tNALU: {} (len={})", apData, apData.length);
+            totalDataLen += apData.length;
+        }
+
+        if (totalDataLen > RtpPacket.RTP_PACKET_MAX_SIZE) {
+            logger.warn("Total payload length is more than RTP Packet max size. Fail to pack AP. (payloadLen={}, rtpMaxSize={})",
+                    totalDataLen, RtpPacket.RTP_PACKET_MAX_SIZE);
+            return null;
+        }
+
+        int curLen = 0;
+        byte[] totalData = new byte[totalDataLen];
+        for (byte[] ap : apList) {
+            System.arraycopy(ap, 0, totalData, curLen, ap.length);
+            curLen += ap.length;
+        }
+
+        logger.debug("\tAP: {}", totalData);
+        logger.info("Success to pack AP.");
+
+        return new H265Packet(totalData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
     }
 
     ////////////////////////////////////////////////////////////////////

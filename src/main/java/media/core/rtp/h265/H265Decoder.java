@@ -6,7 +6,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -29,13 +28,17 @@ public class H265Decoder {
         logger.debug("\tSSRC: {}", h265Packet.getSyncSource());
         logger.debug("\tPayload Type: {}", h265Packet.getPayloadType());
         logger.debug("\tPayload Length: {}", h265Packet.getPayloadLength());
-        logger.debug("\tPayload: {}", Arrays.toString(h265Packet.getRawPayload()));
+        logger.debug("\tRaw data: {}", h265Packet.getRawData());
+        logger.debug("\tPayload: {}", h265Packet.getRawPayload());
 
         unPackHeader(h265Packet);
         switch (h265Packet.getType()) {
             case 48:
                 logger.debug("AP is detected.");
-                List<byte[]> unPackedAps = unPackAp(h265Packet);
+                List<H265Packet> unPackedAps = unPackAp(h265Packet);
+                for (H265Packet unpackedPacket : unPackedAps) {
+                    handle(unpackedPacket);
+                }
                 break;
             case 49:
                 logger.debug("FU is detected.");
@@ -135,62 +138,68 @@ public class H265Decoder {
      *      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
      */
 
-    private List<byte[]> unPackAp (H265Packet h265Packet) {
+    private List<H265Packet> unPackAp (H265Packet h265Packet) {
         logger.info("Starting to unpack AP...");
-
-        byte[] rawPayload = h265Packet.getRawPayload();
-        if (rawPayload == null || rawPayload.length == 0) {
-            logger.warn("Payload is null. Fail to unpack AP.");
+        if (h265Packet == null) {
+            logger.warn("Packet is null. Fail to unpack AP.");
             return Collections.emptyList();
         }
 
-        int rawPayloadLength = rawPayload.length;
-        if (rawPayloadLength <= H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE) {
-            logger.warn("Payload is too short. Fail to unpack AP.");
+        byte[] rawData = h265Packet.getRawData();
+        if (rawData == null || rawData.length == 0) {
+            logger.warn("Raw data is null or empty. Fail to unpack AP.");
             return Collections.emptyList();
         }
 
-        List<byte[]> naluList = new ArrayList<>();
-        byte[] firstNaluBuf = new byte[rawPayloadLength - H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE];
-        byte[] secondNaluBuf;
-        System.arraycopy(rawPayload, H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE, firstNaluBuf, 0, rawPayload.length - H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE); // ignore PayloadHdr
+        int rawDataLength = rawData.length;
+        if (rawDataLength <= RtpPacket.FIXED_HEADER_SIZE) {
+            logger.warn("Packet is too short. Fail to unpack AP.");
+            return Collections.emptyList();
+        }
 
-        int i = 0;
-        int curLen = 0;
+        List<H265Packet> naluList = new ArrayList<>();
+        byte[] rtpHeader = new byte[RtpPacket.FIXED_HEADER_SIZE];
+        System.arraycopy(rawData, 0, rtpHeader, 0, RtpPacket.FIXED_HEADER_SIZE);
+
+        byte[] rawPayload = new byte[rawDataLength - RtpPacket.FIXED_HEADER_SIZE];
+        System.arraycopy(rawData, RtpPacket.FIXED_HEADER_SIZE, rawPayload, 0, rawData.length - RtpPacket.FIXED_HEADER_SIZE); // ignore PayloadHdr
+
+        int totalDataLen = 0;
         int curNaluSize;
+
         while (true) {
-            byte[] curNalu;
-            if (i == 0) {
-                curNaluSize = getNaluSize(firstNaluBuf, 0);
-                curNalu = new byte[curNaluSize]; // find first nalu size
-                System.arraycopy(firstNaluBuf, H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE, curNalu, 0, curNaluSize); // nalu hdr + body
-
-                naluList.add(curNalu); // add to list
-                curLen = H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE + curNaluSize; // DONL size + NALU size + NALU len(hdr + body)
-            } else {
-                curNaluSize = getNaluSize(firstNaluBuf, curLen);
-                if (curNaluSize == 0) {
-                    break;
-                }
-
-                secondNaluBuf = new byte[firstNaluBuf.length - curLen];
-                System.arraycopy(firstNaluBuf, curLen, secondNaluBuf, 0, firstNaluBuf.length - curLen);
-
-                curNalu = new byte[curNaluSize];
-                System.arraycopy(secondNaluBuf, H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE, curNalu, 0, curNaluSize);
-                naluList.add(curNalu);
-
-                curLen += H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE + curNaluSize; // DONL size + NALU size + NALU len(hdr + body)
+            if (totalDataLen >= rawPayload.length) {
+                break;
             }
 
-            logger.debug("\tCur NALU size: {}", curNaluSize);
-            logger.debug("\t[{}] NALU len: {} (bytes), remaining: {} (bytes)", i, curLen, (firstNaluBuf.length - curLen));
-            logger.debug("\tCur NALU: {}", curNalu);
+            if (totalDataLen == 0) {
+                totalDataLen += H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE;
+            }
+
+            curNaluSize = getNaluSize(rawPayload, totalDataLen);
+            if (curNaluSize <= 0) {
+                break;
+            }
+            totalDataLen += H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE;
+
+            byte[] curNalu = new byte[RtpPacket.FIXED_HEADER_SIZE + curNaluSize + H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE];
+            System.arraycopy(rtpHeader, 0, curNalu, 0, RtpPacket.FIXED_HEADER_SIZE); // [RTP Header]
+            System.arraycopy(rawPayload, totalDataLen, curNalu, RtpPacket.FIXED_HEADER_SIZE, curNaluSize); // [NALU Payload (hdr + body)]
+
+            logger.debug("\tNALU len: {} (bytes), remaining: {} (bytes)", totalDataLen, (rawPayload.length - totalDataLen));
+            logger.debug("\tCur NALU: (payloadLen={}) {}", curNaluSize, curNalu);
             logger.debug("---------------------------");
-            i++;
+
+            naluList.add(new H265Packet(curNalu, RtpPacket.RTP_PACKET_MAX_SIZE, true)); // [RTP Header] + [NALU Hdr + NALU Body]
+            totalDataLen += curNaluSize;
         }
 
-        logger.info("Success to unpack AP.");
+        if (naluList.isEmpty() || totalDataLen == 0) {
+            logger.info("Fail to unpack AP. (listSize={}, totalLen={})", naluList.size(), totalDataLen);
+        } else {
+            logger.info("Success to unpack AP. (listSize={}, totalLen={})", naluList.size(), totalDataLen);
+        }
+
         return naluList;
     }
 
@@ -255,7 +264,7 @@ public class H265Decoder {
         byte[] header = new byte[3];
         System.arraycopy(rtpPayloadNalu, 0, header, 0, 3);
         byte fuHeader = header[2];
-        int type = fuHeader & 0b00111111; // expected: NALU Type
+        //int type = fuHeader & 0b00111111; // expected: NALU Type
         int start = fuHeader & 0b10000000; // expected: 128 > S = 1
         int end = fuHeader & 0b01000000; // expected: 64 > E = 1
 
