@@ -20,7 +20,7 @@ public class H265Encoder {
     ////////////////////////////////////////////////////////////////////
 
     @Deprecated
-    public H265Packet packAp (byte[] nalu1, byte[] nalu2) {
+    public H265Packet packAp (byte[] nalu1, byte[] nalu2, boolean isDonl, boolean isDond) {
         logger.info("Starting to pack AP...");
 
         if (nalu1 == null || nalu1.length == 0 || nalu2 == null || nalu2.length == 0) {
@@ -69,6 +69,7 @@ public class H265Encoder {
     public H265Packet packApByList (List<H265Packet> naluList) {
         logger.info("Starting to pack AP...");
 
+        // 1) Check Single NALU Packet list
         if (naluList == null || naluList.isEmpty()) {
             logger.warn("AP List is null or empty. Fail to pack AP.");
             return null;
@@ -76,7 +77,9 @@ public class H265Encoder {
 
         int totalDataLen = 0;
         List<byte[]> apList = new ArrayList<>();
+
         for (H265Packet h265Packet : naluList) {
+            // 2) Check AP Packet Payload (hdr + body) null or length
             byte[] nalu = h265Packet.getRawData();
             if (nalu == null || nalu.length == 0) {
                 logger.warn("Payload is null. Fail to pack AP.");
@@ -87,35 +90,60 @@ public class H265Encoder {
                 return null;
             }
 
+            // 2) Ready for packing AP Payload
             byte[] rtpPayloadNalu = new byte[nalu.length - RtpPacket.FIXED_HEADER_SIZE];
             byte[] rtpHdrNalu = new byte[RtpPacket.FIXED_HEADER_SIZE];
             System.arraycopy(nalu, 0, rtpHdrNalu, 0, RtpPacket.FIXED_HEADER_SIZE);
             System.arraycopy(nalu, RtpPacket.FIXED_HEADER_SIZE, rtpPayloadNalu, 0, nalu.length - RtpPacket.FIXED_HEADER_SIZE);
 
             byte[] apData;
-            int index;
 
+            int totalApDataLen;
             if (totalDataLen == 0) {
-                apData = new byte[RtpPacket.FIXED_HEADER_SIZE + rtpPayloadNalu.length +
-                        H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE + H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE];
-                System.arraycopy(rtpHdrNalu, 0, apData, 0, RtpPacket.FIXED_HEADER_SIZE);
-                index = RtpPacket.FIXED_HEADER_SIZE;
+                totalApDataLen = RtpPacket.FIXED_HEADER_SIZE + H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE + H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE;
+                if (h265Packet.isDonlUsing()) {
+                    totalApDataLen += H265Packet.RTP_HEVC_DONL_FIELD_SIZE;
+                }
 
-                apData[index] = 48 << 1;
-                apData[1 + index] = 1;
-                apData[2 + index] = (byte) (rtpPayloadNalu.length >> 8);
-                apData[3 + index] = (byte) (rtpPayloadNalu.length);
-                System.arraycopy(rtpPayloadNalu, 0, apData,
-                        H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE + H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE + index,
-                        rtpPayloadNalu.length);
+                apData = new byte[rtpPayloadNalu.length + totalApDataLen];
+                System.arraycopy(rtpHdrNalu, 0, apData, 0, RtpPacket.FIXED_HEADER_SIZE);
+
+                apData[RtpPacket.FIXED_HEADER_SIZE] = 48 << 1;
+
+                // 3) Set Header (Payload hdr + NALU size hdr)
+                if (h265Packet.isDonlUsing()) { // 2 Bytes
+                    // TODO: Insert DONL Data
+                    apData[1 + RtpPacket.FIXED_HEADER_SIZE] = 1; // #
+                    apData[2 + RtpPacket.FIXED_HEADER_SIZE] = 1; // #
+                    apData[3 + RtpPacket.FIXED_HEADER_SIZE] = 1;
+                    apData[4 + RtpPacket.FIXED_HEADER_SIZE] = (byte) (rtpPayloadNalu.length >> 8);
+                    apData[5 + RtpPacket.FIXED_HEADER_SIZE] = (byte) (rtpPayloadNalu.length);
+                } else {
+                    apData[1 + RtpPacket.FIXED_HEADER_SIZE] = 1;
+                    apData[2 + RtpPacket.FIXED_HEADER_SIZE] = (byte) (rtpPayloadNalu.length >> 8);
+                    apData[3 + RtpPacket.FIXED_HEADER_SIZE] = (byte) (rtpPayloadNalu.length);
+                }
             } else {
-                index = 0;
-                apData = new byte[rtpPayloadNalu.length + H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE];
-                apData[0] = (byte) (rtpPayloadNalu.length >> 8);
-                apData[1] = (byte) (rtpPayloadNalu.length);
-                System.arraycopy(rtpPayloadNalu, 0, apData, H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE + index, rtpPayloadNalu.length);
+                totalApDataLen = H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE;
+                if (h265Packet.isDondUsing()) {
+                    totalApDataLen += H265Packet.RTP_HEVC_DOND_FIELD_SIZE;
+                }
+
+                apData = new byte[rtpPayloadNalu.length + totalApDataLen];
+
+                if (h265Packet.isDondUsing()) { // 1 Byte
+                    // TODO: Insert DOND Data
+                    apData[0] = 1; // #
+                    apData[1] = (byte) (rtpPayloadNalu.length >> 8);
+                    apData[2] = (byte) (rtpPayloadNalu.length);
+                } else {
+                    apData[0] = (byte) (rtpPayloadNalu.length >> 8);
+                    apData[1] = (byte) (rtpPayloadNalu.length);
+                }
             }
 
+            // 4) Set AP Payload
+            System.arraycopy(rtpPayloadNalu, 0, apData, totalApDataLen, rtpPayloadNalu.length);
             apList.add(apData);
 
             logger.debug("\tNALU: {} (len={})", apData, apData.length);
@@ -128,6 +156,7 @@ public class H265Encoder {
             return null;
         }
 
+        // 5) Aggregate All the Single NALU Packets to one AP Packet
         int curLen = 0;
         byte[] totalData = new byte[totalDataLen];
         for (byte[] ap : apList) {
@@ -146,16 +175,22 @@ public class H265Encoder {
     public H265Packet packFu (H265Packet h265Packet, FUPosition fuPosition) {
         logger.info("Starting to pack FU...");
 
+        // 1) Check Single NALU Packet Payload (hdr + body) null or length
         byte[] rawPayload = h265Packet.getRawData();
         if (rawPayload == null || rawPayload.length == 0) {
             logger.warn("Payload is null. Fail to pack FU.");
             return null;
         }
 
+        // 2) Ready for packing FU Payload
         int packetLength = h265Packet.getLength();
         int payloadLength = packetLength - RtpPacket.FIXED_HEADER_SIZE;
+        int totalHdrSize = H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE + H265Packet.RTP_HEVC_FU_HEADER_SIZE;
+        if (h265Packet.isDonlUsing()) {
+            totalHdrSize += H265Packet.RTP_HEVC_DONL_FIELD_SIZE;
+        }
 
-        byte[] buffer = new byte[packetLength + 3];
+        byte[] buffer = new byte[packetLength + totalHdrSize];
         byte[] rtpHdrNalu = new byte[RtpPacket.FIXED_HEADER_SIZE];
         byte[] rtpPayloadNalu = new byte[payloadLength];
         System.arraycopy(rawPayload, 0, rtpHdrNalu, 0, RtpPacket.FIXED_HEADER_SIZE);
@@ -163,7 +198,8 @@ public class H265Encoder {
         System.arraycopy(rawPayload, RtpPacket.FIXED_HEADER_SIZE, rtpPayloadNalu, 0, payloadLength);
         logger.debug("rtpPayloadNalu: {}", rtpPayloadNalu);
 
-        byte[] header = new byte[3];
+        // 3) Set Header (Payload hdr + FU hdr)
+        byte[] header = new byte[totalHdrSize];
         header[0] = 49 << 1;
         header[1] = 1;
         if (fuPosition == FUPosition.START) {
@@ -177,11 +213,17 @@ public class H265Encoder {
             header[2] += 0b01000000; // E = 1
         }
 
-        System.arraycopy(rtpHdrNalu, 0, buffer, 0, RtpPacket.FIXED_HEADER_SIZE);
-        System.arraycopy(header, 0, buffer, RtpPacket.FIXED_HEADER_SIZE, 3);
+        if (h265Packet.isDonlUsing()) { // 2 Bytes
+            // TODO: Insert DONL Data
+            header[3] = 1; // #
+            header[4] = 1; // #
+        }
 
-        //rtpPayloadNalu[0] = 49;
-        System.arraycopy(rtpPayloadNalu, 0, buffer, RtpPacket.FIXED_HEADER_SIZE + 3, payloadLength);
+        // 4) Set FU Payload
+        System.arraycopy(rtpHdrNalu, 0, buffer, 0, RtpPacket.FIXED_HEADER_SIZE);
+        System.arraycopy(header, 0, buffer, RtpPacket.FIXED_HEADER_SIZE, totalHdrSize);
+
+        System.arraycopy(rtpPayloadNalu, 0, buffer, RtpPacket.FIXED_HEADER_SIZE + totalHdrSize, payloadLength);
         logger.debug("Packed FU: {}, len: {}", buffer, buffer.length);
 
         logger.info("Success to pack FU.");

@@ -54,6 +54,20 @@ public class H265Decoder {
 
     ////////////////////////////////////////////////////////////////////
 
+    /** Single NAL Unit
+     *    0                   1                   2                   3
+     *     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+     *    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+     *    |           PayloadHdr          |      DONL (conditional)       |
+     *    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+     *    |                                                               |
+     *    |                  NAL unit payload data                        |
+     *    |                                                               |
+     *    |                               +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+     *    |                               :...OPTIONAL RTP padding        |
+     *    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+     */
+
     /** NAL Unit Header
      *      0               1
      *      0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
@@ -113,8 +127,7 @@ public class H265Decoder {
 
     ////////////////////////////////////////////////////////////////////
 
-    // Aggregation Packets (APs)
-    /**
+    /** Aggregation Packet (AP)
      *      0               1               2               3
      *      0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
      *      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -140,6 +153,8 @@ public class H265Decoder {
 
     private List<H265Packet> unPackAp (H265Packet h265Packet) {
         logger.info("Starting to unpack AP...");
+
+        // 2) Check AP Packet Payload (hdr + body) null or length
         if (h265Packet == null) {
             logger.warn("Packet is null. Fail to unpack AP.");
             return Collections.emptyList();
@@ -157,6 +172,7 @@ public class H265Decoder {
             return Collections.emptyList();
         }
 
+        // 2) Ready for packing DDivided AP Packet list
         List<H265Packet> naluList = new ArrayList<>();
         byte[] rtpHeader = new byte[RtpPacket.FIXED_HEADER_SIZE];
         System.arraycopy(rawData, 0, rtpHeader, 0, RtpPacket.FIXED_HEADER_SIZE);
@@ -174,6 +190,9 @@ public class H265Decoder {
 
             if (totalDataLen == 0) {
                 totalDataLen += H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE;
+                if (h265Packet.isDonlUsing()) {
+                    totalDataLen += H265Packet.RTP_HEVC_DONL_FIELD_SIZE;
+                }
             }
 
             curNaluSize = getNaluSize(rawPayload, totalDataLen);
@@ -181,8 +200,14 @@ public class H265Decoder {
                 break;
             }
             totalDataLen += H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE;
+            if (h265Packet.isDondUsing()) {
+                totalDataLen += H265Packet.RTP_HEVC_DOND_FIELD_SIZE;
+            }
 
+            // 3) Divide AP Packet & Add to the list
             byte[] curNalu = new byte[RtpPacket.FIXED_HEADER_SIZE + curNaluSize + H265Packet.RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE];
+
+            // TODO: Set RTP Header
             System.arraycopy(rtpHeader, 0, curNalu, 0, RtpPacket.FIXED_HEADER_SIZE); // [RTP Header]
             System.arraycopy(rawPayload, totalDataLen, curNalu, RtpPacket.FIXED_HEADER_SIZE, curNaluSize); // [NALU Payload (hdr + body)]
 
@@ -205,9 +230,7 @@ public class H265Decoder {
 
     ////////////////////////////////////////////////////////////////////
 
-    // Fragmentation Units (FUs)
-    /**
-     * The structure of FU header
+    /** The structure of FU header
      *   +---------------+
      *   |0|1|2|3|4|5|6|7|
      *   +-+-+-+-+-+-+-+-+
@@ -221,7 +244,7 @@ public class H265Decoder {
      * The last package: S=0, E=1
      */
 
-    /**
+    /** Fragmentation Unit (FU)
      *     0                   1                   2                   3
      *     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
      *    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -244,6 +267,7 @@ public class H265Decoder {
     private H265Packet unPackFu (H265Packet h265Packet) {
         logger.info("Starting to unpack FU...");
 
+        // 1) Check FU Packet Payload (hdr + body) null or length
         byte[] rawPayload = h265Packet.getRawData();
         if (rawPayload == null || rawPayload.length == 0) {
             logger.warn("Payload is null. Fail to unpack FU.");
@@ -254,6 +278,7 @@ public class H265Decoder {
             return null;
         }
 
+        // 2) Ready for unpacking FU Payload
         int packetLength = h265Packet.getLength();
         int payloadLength = packetLength - RtpPacket.FIXED_HEADER_SIZE;
         byte[] rtpHdrNalu = new byte[RtpPacket.FIXED_HEADER_SIZE];
@@ -261,13 +286,19 @@ public class H265Decoder {
         System.arraycopy(rawPayload, 0, rtpHdrNalu, 0, RtpPacket.FIXED_HEADER_SIZE);
         System.arraycopy(rawPayload, RtpPacket.FIXED_HEADER_SIZE, rtpPayloadNalu, 0, payloadLength);
 
-        byte[] header = new byte[3];
-        System.arraycopy(rtpPayloadNalu, 0, header, 0, 3);
+        int totalHdrSize = H265Packet.RTP_HEVC_PAYLOAD_HEADER_SIZE + H265Packet.RTP_HEVC_FU_HEADER_SIZE;
+        if (h265Packet.isDonlUsing()) {
+            totalHdrSize += H265Packet.RTP_HEVC_DONL_FIELD_SIZE;
+        }
+
+        byte[] header = new byte[totalHdrSize];
+        System.arraycopy(rtpPayloadNalu, 0, header, 0, totalHdrSize);
         byte fuHeader = header[2];
         //int type = fuHeader & 0b00111111; // expected: NALU Type
         int start = fuHeader & 0b10000000; // expected: 128 > S = 1
         int end = fuHeader & 0b01000000; // expected: 64 > E = 1
 
+        // 3) Check FU Position
         FUPosition fuPosition = FUPosition.NONE;
         if (start == 128) {
             fuPosition = FUPosition.START;
@@ -310,8 +341,9 @@ public class H265Decoder {
         }
         logger.debug("Cur FU Position : {}", getFuPositionStr(curFuPosition));
 
-        byte[] fuPayload = new byte[payloadLength - 3];
-        System.arraycopy(rtpPayloadNalu, 3, fuPayload, 0, payloadLength - 3);
+        // 4) Aggregate the FUs
+        byte[] fuPayload = new byte[payloadLength - totalHdrSize];
+        System.arraycopy(rtpPayloadNalu, totalHdrSize, fuPayload, 0, payloadLength - totalHdrSize);
 
         if (curFuPosition == FUPosition.END) {
             int totalLength = 0;
@@ -334,7 +366,7 @@ public class H265Decoder {
             logger.info("Success to unpack FU.");
             return totalPacket;
         } else if (curFuPosition == FUPosition.START) {
-            byte[] rtpPacketExceptFuHeader = new byte[packetLength - 3];
+            byte[] rtpPacketExceptFuHeader = new byte[packetLength - totalHdrSize];
             System.arraycopy(rtpHdrNalu, 0, rtpPacketExceptFuHeader, 0, RtpPacket.FIXED_HEADER_SIZE);
             System.arraycopy(fuPayload, 0, rtpPacketExceptFuHeader, RtpPacket.FIXED_HEADER_SIZE, payloadLength - 3);
 
