@@ -40,6 +40,12 @@ public class H265Packet extends RtpPacket {
     public void initialize (byte[] data) {
         if (data == null || data.length == 0) {
             logger.warn("Packet raw data is null or empty. Fail to initialize packet.");
+            payload = null;
+            rawPayload = null;
+            forbidden = -1;
+            type = -1;
+            lid = -1;
+            tid = -1;
             return;
         }
 
