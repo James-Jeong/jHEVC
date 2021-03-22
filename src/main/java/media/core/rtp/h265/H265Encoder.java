@@ -89,6 +89,10 @@ public class H265Encoder {
                 logger.warn("Payload is too short. Fail to pack AP.");
                 return null;
             }
+            if ((h265Packet.getType()) == H265Packet.RTP_HEVC_TYPE_AP) {
+                logger.warn("Nested. Fail to pack AP.");
+                return null;
+            }
 
             // 2) Ready for packing AP Payload
             byte[] rtpPayloadNalu = new byte[nalu.length - RtpPacket.FIXED_HEADER_SIZE];
@@ -108,7 +112,7 @@ public class H265Encoder {
                 apData = new byte[rtpPayloadNalu.length + totalApDataLen];
                 System.arraycopy(rtpHdrNalu, 0, apData, 0, RtpPacket.FIXED_HEADER_SIZE);
 
-                apData[RtpPacket.FIXED_HEADER_SIZE] = 48 << 1;
+                apData[RtpPacket.FIXED_HEADER_SIZE] = H265Packet.RTP_HEVC_TYPE_AP << 1;
 
                 // 3) Set Header (Payload hdr + NALU size hdr)
                 if (h265Packet.isDonlUsing()) { // 2 Bytes
@@ -182,6 +186,11 @@ public class H265Encoder {
             return null;
         }
 
+        if (h265Packet.getType() == H265Packet.RTP_HEVC_TYPE_FU) {
+            logger.warn("Nested. Fail to pack FU.");
+            return null;
+        }
+
         // 2) Ready for packing FU Payload
         int packetLength = h265Packet.getLength();
         int payloadLength = packetLength - RtpPacket.FIXED_HEADER_SIZE;
@@ -200,7 +209,7 @@ public class H265Encoder {
 
         // 3) Set Header (Payload hdr + FU hdr)
         byte[] header = new byte[totalHdrSize];
-        header[0] = 49 << 1;
+        header[0] = H265Packet.RTP_HEVC_TYPE_FU << 1;
         header[1] = 1;
         if (fuPosition == FUPosition.START) {
             header[2] = (byte) h265Packet.getType();

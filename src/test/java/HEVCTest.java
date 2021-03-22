@@ -9,6 +9,9 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
 public class HEVCTest {
 
     H265Encoder h265Encoder = new H265Encoder();
@@ -30,44 +33,48 @@ public class HEVCTest {
 
     @Test
     public void NormalTest () {
+        // NALU
         NALUtest();
         VPStest();
         SPStest();
         PPStest();
         SEItest();
 
+        // AP
         APtest();
+
+        // FU
         FUTest();
     }
 
     @Test
     public void NALUtest () {
         H265Packet hevcPacket = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        h265Decoder.handle(hevcPacket);
+        assertTrue(h265Decoder.handle(hevcPacket));
     }
 
     @Test
     public void VPStest () {
         H265Packet hevcPacket = new H265Packet(rawVPSData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        h265Decoder.handle(hevcPacket);
+        assertTrue(h265Decoder.handle(hevcPacket));
     }
 
     @Test
     public void SPStest () {
         H265Packet hevcPacket = new H265Packet(rawSPSData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        h265Decoder.handle(hevcPacket);
+        assertTrue(h265Decoder.handle(hevcPacket));
     }
 
     @Test
     public void PPStest () {
         H265Packet hevcPacket = new H265Packet(rawPPSData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        h265Decoder.handle(hevcPacket);
+        assertTrue(h265Decoder.handle(hevcPacket));
     }
 
     @Test
     public void SEItest () {
         H265Packet hevcPacket = new H265Packet(rawSEIData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        h265Decoder.handle(hevcPacket);
+        assertTrue(h265Decoder.handle(hevcPacket));
     }
 
     @Test
@@ -75,27 +82,27 @@ public class HEVCTest {
         List<H265Packet> packetList = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
             H265Packet hevcPacket = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-            h265Decoder.handle(hevcPacket);
+            assertTrue(h265Decoder.handle(hevcPacket));
             packetList.add(hevcPacket);
         }
 
         H265Packet ap = h265Encoder.packApByList(packetList);
-        h265Decoder.handle(ap);
+        assertTrue(h265Decoder.handle(ap));
     }
 
     @Test
     public void FUTest () {
         H265Packet hevcPacket1 = new H265Packet(rawFuData1, RtpPacket.RTP_PACKET_MAX_SIZE, true);
         H265Packet fu1 = h265Encoder.packFu(hevcPacket1, FUPosition.START);
-        h265Decoder.handle(fu1);
+        assertTrue(h265Decoder.handle(fu1));
 
         H265Packet hevcPacket2 = new H265Packet(rawFuData2, RtpPacket.RTP_PACKET_MAX_SIZE, true);
         H265Packet fu2 = h265Encoder.packFu(hevcPacket2, FUPosition.MIDDLE);
-        h265Decoder.handle(fu2);
+        assertTrue(h265Decoder.handle(fu2));
 
         H265Packet hevcPacket3 = new H265Packet(rawFuData3, RtpPacket.RTP_PACKET_MAX_SIZE, true);
         H265Packet fu3 = h265Encoder.packFu(hevcPacket3, FUPosition.END);
-        h265Decoder.handle(fu3);
+        assertTrue(h265Decoder.handle(fu3));
     }
 
     ///////////////////////////////////////////////////
@@ -103,58 +110,156 @@ public class HEVCTest {
 
     @Test
     public void AbnormalTest () {
+        // NALU
         NALUFailtest1_payload_is_null();
         NALUFailtest2_payload_length_0();
 
+        // AP
         APFailtest1_Packet_List_is_null();
         APFailtest2_Packet_Max_size_over();
+        APFailTest3_Nested();
 
+        // FU
         FUFailTest1_Unexpected_Position_Error_START_START_END();
+        FUFailTest2_START_RECV_OTHER_TYPE();
+        FUFailTest3_MIDDLE_RECV_OTHER_TYPE();
+        FUFailTest4_S1_E1();
+        FUFailTest5_Nested();
     }
 
+    /**
+     * NALU Payload 가 null 인 경우 H265Packet 객체 생성 실패
+     */
     @Test
     public void NALUFailtest1_payload_is_null () {
         H265Packet hevcPacket = new H265Packet(null, RtpPacket.RTP_PACKET_MAX_SIZE, true);
     }
 
+    /**
+     * NALU Payload 의 길이가 0 인 경우 H265Packet 객체 생성 실패
+     */
     @Test
     public void NALUFailtest2_payload_length_0 () {
         byte[] tempData = new byte[0];
         H265Packet hevcPacket = new H265Packet(tempData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
     }
 
+    /**
+     * Packing 할 NALU 리스트가 비어 있는 경우 AP Packing 실패
+     */
     @Test
     public void APFailtest1_Packet_List_is_null () {
         List<H265Packet> packetList = new ArrayList<>();
         H265Packet ap = h265Encoder.packApByList(packetList);
-        h265Decoder.handle(ap);
+        assertFalse(h265Decoder.handle(ap));
     }
 
+    /**
+     * Packing 할 AP 의 크기가 RTP Max Size 를 초과한 경우 Packing 실패
+     */
     @Test
     public void APFailtest2_Packet_Max_size_over () {
         List<H265Packet> packetList = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
-            H265Packet hevcPacket = new H265Packet(rawNALUData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+            H265Packet hevcPacket = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+            packetList.add(hevcPacket);
+        }
+
+        H265Packet ap = h265Encoder.packApByList(packetList);
+        assertFalse(h265Decoder.handle(ap));
+    }
+
+    /**
+     * AP 페이로드에 AP 패킷을 포함할 경우 Packing 실패
+     */
+    @Test
+    public void APFailTest3_Nested () {
+        List<H265Packet> packetList = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            H265Packet hevcPacket = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+            h265Decoder.handle(hevcPacket);
             packetList.add(hevcPacket);
         }
 
         H265Packet ap = h265Encoder.packApByList(packetList);
         h265Decoder.handle(ap);
+
+        List<H265Packet> packetList2 = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            packetList2.add(ap);
+        }
+
+        H265Packet ap2 = h265Encoder.packApByList(packetList2);
+        assertFalse(h265Decoder.handle(ap2));
     }
 
+    /**
+     * START FU 를 수신하였고, 그 다음 패킷의 Position 이 MIDDLE 이 아닌 경우 모두 초기화하고 START FU 가 아닌 경우 Drop
+     */
     @Test
     public void FUFailTest1_Unexpected_Position_Error_START_START_END () {
-        H265Packet hevcPacket1 = new H265Packet(rawFuData1, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        H265Packet hevcPacket1 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
         H265Packet fu1 = h265Encoder.packFu(hevcPacket1, FUPosition.START);
         h265Decoder.handle(fu1);
 
-        H265Packet hevcPacket2 = new H265Packet(rawFuData2, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        H265Packet hevcPacket2 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
         H265Packet fu2 = h265Encoder.packFu(hevcPacket2, FUPosition.START);
+        assertFalse(h265Decoder.handle(fu2));
+
+        H265Packet hevcPacket3 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        H265Packet fu3 = h265Encoder.packFu(hevcPacket3, FUPosition.END);
+        assertFalse(h265Decoder.handle(fu3));
+    }
+
+    /**
+     * START FU 패킷을 수신했는데, 다른 NAL Type 패킷을 수신한 경우 FU list, Cur FU Position(NONE 으로) 초기화
+     */
+    @Test
+    public void FUFailTest2_START_RECV_OTHER_TYPE () {
+        H265Packet hevcPacket1 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        H265Packet fu1 = h265Encoder.packFu(hevcPacket1, FUPosition.START);
+        h265Decoder.handle(fu1);
+
+        H265Packet hevcPacket2 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        assertFalse(h265Decoder.handle(hevcPacket2));
+    }
+
+    /**
+     * MIDDLE FU 패킷까지 수신했는데, 다른 NAL Type 패킷을 수신한 경우 FU list, Cur FU Position(NONE 으로) 초기화
+     */
+    @Test
+    public void FUFailTest3_MIDDLE_RECV_OTHER_TYPE () {
+        H265Packet hevcPacket1 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        H265Packet fu1 = h265Encoder.packFu(hevcPacket1, FUPosition.START);
+        h265Decoder.handle(fu1);
+
+        H265Packet hevcPacket2 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        H265Packet fu2 = h265Encoder.packFu(hevcPacket2, FUPosition.MIDDLE);
         h265Decoder.handle(fu2);
 
-        H265Packet hevcPacket3 = new H265Packet(rawFuData3, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        H265Packet fu3 = h265Encoder.packFu(hevcPacket3, FUPosition.END);
-        h265Decoder.handle(fu3);
+        H265Packet hevcPacket3 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        assertFalse(h265Decoder.handle(hevcPacket3));
+    }
+
+    /**
+     * FuHeader 에서 S 와 E bit 가 모두 1 인 경우 Decoding 실패
+     */
+    @Test
+    public void FUFailTest4_S1_E1 () {
+        H265Packet hevcPacket1 = new H265Packet(rawFuData4_S1_E1, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        assertFalse(h265Decoder.handle(hevcPacket1));
+    }
+
+    /**
+     * FU 페이로드에 FU 패킷을 포함할 경우 Packing 실패
+     */
+    @Test
+    public void FUFailTest5_Nested () {
+        H265Packet hevcPacket1 = new H265Packet(rawFuData1, RtpPacket.RTP_PACKET_MAX_SIZE, true);
+        h265Decoder.handle(hevcPacket1);
+
+        H265Packet fu = h265Encoder.packFu(hevcPacket1, FUPosition.START);
+        assertFalse(h265Decoder.handle(fu));
     }
 
     ///////////////////////////////////////////////////
@@ -187,9 +292,9 @@ public class HEVCTest {
             (byte) 0x35, (byte) 0xac, (byte) 0x00, (byte) 0x00, (byte) 0x80, (byte) 0x00, (byte) 0x00, (byte) 0x03
     };
 
-    byte[] rawNALUData = {
-            (byte) 0x80,(byte) 0x60,(byte) 0x10,(byte) 0xbc,(byte) 0xd8,(byte) 0x37,
-            (byte) 0x42,(byte) 0x5e,(byte) 0x3d,(byte) 0x20,(byte) 0x83,(byte) 0x45,(byte) 0x62,(byte) 0x01,(byte) 0x13,(byte) 0xfd,(byte) 0xba,(byte) 0xa2,(byte) 0xd7,(byte) 0x31,(byte) 0xd6,(byte) 0xb4,
+    byte[] rawApData = {
+            (byte) 0x80,(byte) 0x60,(byte) 0x10,(byte) 0xbc,(byte) 0xd8,(byte) 0x37, (byte) 0x42,(byte) 0x5e,(byte) 0x3d,(byte) 0x20,(byte) 0x83,(byte) 0x45,(byte) 0x18,(byte) 0x01,(byte) 0x13,(byte) 0xfd,
+            (byte) 0xba,(byte) 0xa2,(byte) 0xd7,(byte) 0x31,(byte) 0xd6,(byte) 0xb4,
             (byte) 0x49,(byte) 0xbf,(byte) 0x1f,(byte) 0xda,(byte) 0xf4,(byte) 0xb6,(byte) 0x28,(byte) 0x6b,(byte) 0xe8,(byte) 0x9e,(byte) 0x0d,(byte) 0xe3,(byte) 0x7c,(byte) 0x9a,(byte) 0x4e,(byte) 0x9a,
             (byte) 0x67,(byte) 0x63,(byte) 0x71,(byte) 0xd7,(byte) 0x9a,(byte) 0x61,(byte) 0xd7,(byte) 0x46,(byte) 0x59,(byte) 0xd0,(byte) 0xc3,(byte) 0x13,(byte) 0x70,(byte) 0x04,(byte) 0x6d,(byte) 0xea,
             (byte) 0x1d,(byte) 0xb8,(byte) 0x47,(byte) 0xdc,(byte) 0xea,(byte) 0x03,(byte) 0x5d,(byte) 0x05,(byte) 0xb3,(byte) 0xd1,(byte) 0x1e,(byte) 0x94,(byte) 0xf6,(byte) 0xf3,(byte) 0xf4,(byte) 0xec,
@@ -455,6 +560,28 @@ public class HEVCTest {
     byte[] rawFuData3 = {
             (byte) 0x80,(byte) 0x60,(byte) 0x10,(byte) 0xbc,(byte) 0xd8,(byte) 0x37, (byte) 0x42,(byte) 0x5e,(byte) 0x3d,(byte) 0x20,(byte) 0x83,(byte) 0x45,
             (byte) 0x62,(byte) 0x01,(byte) 0x53,
+            (byte) 0x82,(byte) 0x95,(byte) 0xe9,(byte) 0x59,(byte) 0x84,(byte) 0x4c,(byte) 0x5b,(byte) 0x55,(byte) 0x25,(byte) 0x49,(byte) 0x1a,(byte) 0xe7,(byte) 0xdb,(byte) 0xbc,(byte) 0xa5,(byte) 0x6f,
+            (byte) 0x61,(byte) 0x3e,(byte) 0x27,(byte) 0x9d,(byte) 0xe6,(byte) 0x0e,(byte) 0xa1,(byte) 0xa8,(byte) 0xde,(byte) 0x83,(byte) 0x73,(byte) 0xd9,(byte) 0x93,(byte) 0x22,(byte) 0x98,(byte) 0x2c,
+            (byte) 0x88,(byte) 0x3d,(byte) 0x2c,(byte) 0x1e,(byte) 0x23,(byte) 0x22,(byte) 0xbd,(byte) 0x8e,(byte) 0x02,(byte) 0x76,(byte) 0xa7,(byte) 0xfb,(byte) 0xd8,(byte) 0xdd,(byte) 0xe2,(byte) 0x2c,
+            (byte) 0xfd,(byte) 0x7f,(byte) 0x29,(byte) 0x07,(byte) 0x31,(byte) 0x74,(byte) 0xc8,(byte) 0x1c,(byte) 0x33,(byte) 0x57,(byte) 0xd0,(byte) 0x85,(byte) 0x9e,(byte) 0xf9,(byte) 0x7a,(byte) 0xbe,
+            (byte) 0x8e,(byte) 0x7a,(byte) 0x2f,(byte) 0x54,(byte) 0x9e,(byte) 0xcc,(byte) 0x01,(byte) 0xd7,(byte) 0x26,(byte) 0x76,(byte) 0x66,(byte) 0x5a,(byte) 0x82,(byte) 0x09,(byte) 0xc8,(byte) 0x58,
+            (byte) 0x87,(byte) 0xbc,(byte) 0x1a,(byte) 0x52,(byte) 0x81,(byte) 0x62,(byte) 0xe0,(byte) 0x85,(byte) 0x49,(byte) 0x87,(byte) 0xc1,(byte) 0x28,(byte) 0xed,(byte) 0x01,(byte) 0xb7,(byte) 0xb6,
+            (byte) 0x9e,(byte) 0xbc,(byte) 0x75,(byte) 0x29,(byte) 0x00,(byte) 0x18,(byte) 0x78,(byte) 0x95,(byte) 0xeb,(byte) 0x09,(byte) 0x90,(byte) 0x8b,(byte) 0x7d,(byte) 0xdc,(byte) 0xa8,(byte) 0x66,
+            (byte) 0xc3,(byte) 0xff,(byte) 0xe7,(byte) 0xed,(byte) 0x9a,(byte) 0x4a,(byte) 0x67,(byte) 0xd4,(byte) 0xd8,(byte) 0xcd,(byte) 0x0e,(byte) 0xd0,(byte) 0x7a,(byte) 0x20,(byte) 0xd7,(byte) 0x19,
+            (byte) 0xeb,(byte) 0x63,(byte) 0xe6,(byte) 0x1c,(byte) 0x5c,(byte) 0xe2,(byte) 0x5e,(byte) 0x67,(byte) 0x05,(byte) 0xb8,(byte) 0x97,(byte) 0xcc,(byte) 0x5e,(byte) 0x7f,(byte) 0x84,(byte) 0xf9,
+            (byte) 0x50,(byte) 0xb0,(byte) 0xa9,(byte) 0xb5,(byte) 0x11,(byte) 0x16,(byte) 0x00,(byte) 0xa9,(byte) 0xaf,(byte) 0xc0,(byte) 0x89,(byte) 0xde,(byte) 0x77,(byte) 0xa9,(byte) 0x6b,(byte) 0xf0,
+            (byte) 0x77,(byte) 0x5c,(byte) 0x7e,(byte) 0x0a,(byte) 0xb5,(byte) 0x8c,(byte) 0xe5,(byte) 0xc4,(byte) 0xf5,(byte) 0xd9,(byte) 0x49,(byte) 0xae,(byte) 0x3a,(byte) 0x0c,(byte) 0xaf,(byte) 0x8c,
+            (byte) 0x38,(byte) 0x2e,(byte) 0x45,(byte) 0xb1,(byte) 0x3b,(byte) 0x56,(byte) 0x20,(byte) 0x96,(byte) 0xcc,(byte) 0xbf,(byte) 0x75,(byte) 0x83,(byte) 0x63,(byte) 0xa0,(byte) 0x50,(byte) 0x49,
+            (byte) 0x02,(byte) 0x71,(byte) 0xc5,(byte) 0x93,(byte) 0x35,(byte) 0xb3,(byte) 0x81,(byte) 0xc8,(byte) 0x04,(byte) 0x6a,(byte) 0x28,(byte) 0xb0,(byte) 0x39,(byte) 0x59,(byte) 0xd5,(byte) 0x09,
+            (byte) 0x50,(byte) 0x74,(byte) 0x82,(byte) 0x49,(byte) 0x6d,(byte) 0xd4,(byte) 0x0f,(byte) 0x5a,(byte) 0xd9,(byte) 0xab,(byte) 0xd9,(byte) 0x66,(byte) 0x5e,(byte) 0x6a,(byte) 0x6c,(byte) 0x7c,
+            (byte) 0x67,(byte) 0x54,(byte) 0x3a,(byte) 0xb9,(byte) 0x1c,(byte) 0xe4,(byte) 0xc8,(byte) 0xf0,(byte) 0x53,(byte) 0xab,(byte) 0x2e,(byte) 0x72,(byte) 0x83,(byte) 0x7c,(byte) 0x83,(byte) 0xeb,
+            (byte) 0x8c,(byte) 0x18,(byte) 0x1c,(byte) 0xd2,(byte) 0xba,(byte) 0x64,(byte) 0x2a,(byte) 0x39,(byte) 0x29,(byte) 0x18,(byte) 0x09,(byte) 0xbc,(byte) 0x40,(byte) 0xc7,(byte) 0x17,(byte) 0xd7,
+            (byte) 0x5d, (byte) 0x37, (byte) 0xc0, (byte) 0x4d, (byte) 0x3c, (byte) 0x8f, (byte) 0x34, (byte) 0xc1, (byte) 0xdf, (byte) 0x0f
+    };
+
+    byte[] rawFuData4_S1_E1 = {
+            (byte) 0x80,(byte) 0x60,(byte) 0x10,(byte) 0xbc,(byte) 0xd8,(byte) 0x37, (byte) 0x42,(byte) 0x5e,(byte) 0x3d,(byte) 0x20,(byte) 0x83,(byte) 0x45,
+            (byte) 0x62,(byte) 0x01,(byte) 0xE3,
             (byte) 0x82,(byte) 0x95,(byte) 0xe9,(byte) 0x59,(byte) 0x84,(byte) 0x4c,(byte) 0x5b,(byte) 0x55,(byte) 0x25,(byte) 0x49,(byte) 0x1a,(byte) 0xe7,(byte) 0xdb,(byte) 0xbc,(byte) 0xa5,(byte) 0x6f,
             (byte) 0x61,(byte) 0x3e,(byte) 0x27,(byte) 0x9d,(byte) 0xe6,(byte) 0x0e,(byte) 0xa1,(byte) 0xa8,(byte) 0xde,(byte) 0x83,(byte) 0x73,(byte) 0xd9,(byte) 0x93,(byte) 0x22,(byte) 0x98,(byte) 0x2c,
             (byte) 0x88,(byte) 0x3d,(byte) 0x2c,(byte) 0x1e,(byte) 0x23,(byte) 0x22,(byte) 0xbd,(byte) 0x8e,(byte) 0x02,(byte) 0x76,(byte) 0xa7,(byte) 0xfb,(byte) 0xd8,(byte) 0xdd,(byte) 0xe2,(byte) 0x2c,

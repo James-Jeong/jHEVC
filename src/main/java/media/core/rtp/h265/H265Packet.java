@@ -15,6 +15,9 @@ public class H265Packet extends RtpPacket {
     public static final int RTP_HEVC_DONL_FIELD_SIZE = 2;
     public static final int RTP_HEVC_DOND_FIELD_SIZE = 1;
     public static final int RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE = 2;
+    public static final int RTP_HEVC_TYPE_AP = 48;
+    public static final int RTP_HEVC_TYPE_FU = 49;
+    public static final int RTP_HEVC_TYPE_PACI = 50;
 
     private ByteBuffer payload;
     private byte[] rawPayload;

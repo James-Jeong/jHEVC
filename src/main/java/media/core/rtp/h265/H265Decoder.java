@@ -20,8 +20,8 @@ public class H265Decoder {
         // Nothing
     }
 
-    public void handle (H265Packet h265Packet) {
-        if (h265Packet == null) { return; }
+    public boolean handle (H265Packet h265Packet) {
+        if (h265Packet == null) { return false; }
 
         logger.debug("\tRaw Data Length: {}", h265Packet.getRawPayload().length);
         logger.debug("\tRTP Version: {}", h265Packet.getVersion());
@@ -32,24 +32,47 @@ public class H265Decoder {
         logger.debug("\tPayload: {}", h265Packet.getRawPayload());
 
         unPackHeader(h265Packet);
+        boolean result = false;
+
         switch (h265Packet.getType()) {
-            case 48:
+            case H265Packet.RTP_HEVC_TYPE_AP:
                 logger.debug("AP is detected.");
                 List<H265Packet> unPackedAps = unPackAp(h265Packet);
-                for (H265Packet unpackedPacket : unPackedAps) {
-                    handle(unpackedPacket);
+                if (unPackedAps != null && !unPackedAps.isEmpty()) {
+                    result = true;
+                    for (H265Packet unpackedPacket : unPackedAps) {
+                        handle(unpackedPacket);
+                    }
                 }
                 break;
-            case 49:
+            case H265Packet.RTP_HEVC_TYPE_FU:
                 logger.debug("FU is detected.");
                 H265Packet unPackedFu = unPackFu(h265Packet);
+                if (unPackedFu != null) {
+                    result = true;
+                }
                 break;
-            case 50:
+            case H265Packet.RTP_HEVC_TYPE_PACI:
                 logger.debug("PACI is detected. Discarded.");
                 break;
             default:
+                if (curFuPosition != FUPosition.NONE && !fuList.isEmpty()) {
+                    H265Packet curFu = fuList.get(fuList.size() - 1);
+                    if (curFu.getType() != h265Packet.getType()) {
+                        // FU 패킷을 받은 상태에서(fuList is not flushed and FUPosition is not NONE.)
+                        // 다른 타입의 NAL 패킷을 받게 되면 이전에 받았던 모든 FU 버린다.
+                        logger.warn("FU Packet sequence is broken. FU List is cleared. (listSize={}) (curFuPos={}, packetType={})",
+                                fuList.size(), curFuPosition, h265Packet.getType());
+                        curFuPosition = FUPosition.NONE;
+                        fuList.clear();
+                        return false;
+                    }
+                }
+                result = true;
                 break;
         }
+
+        return result;
     }
 
     ////////////////////////////////////////////////////////////////////
@@ -215,7 +238,13 @@ public class H265Decoder {
             logger.debug("\tCur NALU: (payloadLen={}) {}", curNaluSize, curNalu);
             logger.debug("---------------------------");
 
-            naluList.add(new H265Packet(curNalu, RtpPacket.RTP_PACKET_MAX_SIZE, true)); // [RTP Header] + [NALU Hdr + NALU Body]
+            H265Packet curH265Packet = new H265Packet(curNalu, RtpPacket.RTP_PACKET_MAX_SIZE, true); // [RTP Header] + [NALU Hdr + NALU Body]
+            if (curH265Packet.getType() == H265Packet.RTP_HEVC_TYPE_AP) {
+                logger.warn("Nested. Fail to unpack AP.");
+                return null;
+            }
+
+            naluList.add(curH265Packet);
             totalDataLen += curNaluSize;
         }
 
@@ -294,14 +323,25 @@ public class H265Decoder {
         byte[] header = new byte[totalHdrSize];
         System.arraycopy(rtpPayloadNalu, 0, header, 0, totalHdrSize);
         byte fuHeader = header[2];
-        //int type = fuHeader & 0b00111111; // expected: NALU Type
+        int type = fuHeader & 0b00111111; // expected: NALU Type
         int start = fuHeader & 0b10000000; // expected: 128 > S = 1
         int end = fuHeader & 0b01000000; // expected: 64 > E = 1
 
+        if (type == H265Packet.RTP_HEVC_TYPE_FU) {
+            logger.warn("Nested. Fail to unpack FU.");
+            return null;
+        }
+
         // 3) Check FU Position
-        FUPosition fuPosition = FUPosition.NONE;
+        FUPosition fuPosition;
         if (start == 128) {
-            fuPosition = FUPosition.START;
+            if (end == 64) {
+                logger.warn("FU Packet START & END bit is 1. Fail to process FU unpacking.");
+                logger.debug("START: {}, END: {}, fuHeader: {}", start, end, bytesToBinaryString(fuHeader));
+                return null;
+            } else {
+                fuPosition = FUPosition.START;
+            }
         } else if (end == 0) {
             fuPosition = FUPosition.MIDDLE;
         } else {
@@ -377,7 +417,7 @@ public class H265Decoder {
             this.fuList.add(fuPacket);
         }
 
-        return null;
+        return h265Packet;
     }
 
 
