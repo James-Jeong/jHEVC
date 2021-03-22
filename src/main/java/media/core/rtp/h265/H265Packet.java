@@ -1,12 +1,10 @@
 package media.core.rtp.h265;
 
-import com.sun.tools.javac.util.ArrayUtils;
 import media.core.rtp.RtpPacket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 
 public class H265Packet extends RtpPacket {
 
@@ -17,7 +15,6 @@ public class H265Packet extends RtpPacket {
     public static final int RTP_HEVC_DONL_FIELD_SIZE = 2;
     public static final int RTP_HEVC_DOND_FIELD_SIZE = 1;
     public static final int RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE = 2;
-    public static final int HEVC_SPECIFIED_NAL_UNIT_TYPES = 48;
 
     private ByteBuffer payload;
     private byte[] rawPayload;

@@ -172,7 +172,7 @@ public class H265Decoder {
             return Collections.emptyList();
         }
 
-        // 2) Ready for packing DDivided AP Packet list
+        // 2) Ready for packing Divided AP Packet list
         List<H265Packet> naluList = new ArrayList<>();
         byte[] rtpHeader = new byte[RtpPacket.FIXED_HEADER_SIZE];
         System.arraycopy(rawData, 0, rtpHeader, 0, RtpPacket.FIXED_HEADER_SIZE);
