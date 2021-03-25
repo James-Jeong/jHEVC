@@ -9,14 +9,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public class H265Decoder {
+public class H265Unpacker {
 
-    private static final Logger logger = LoggerFactory.getLogger(H265Decoder.class);
+    private static final Logger logger = LoggerFactory.getLogger(H265Unpacker.class);
 
     private FUPosition curFuPosition = FUPosition.NONE;
     private final List<H265Packet> fuList = new ArrayList<>();
 
-    public H265Decoder() {
+    public H265Unpacker() {
         // Nothing
     }
 

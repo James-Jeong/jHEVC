@@ -1,6 +1,6 @@
 import media.core.rtp.RtpPacket;
-import media.core.rtp.h265.H265Decoder;
-import media.core.rtp.h265.H265Encoder;
+import media.core.rtp.h265.H265Unpacker;
+import media.core.rtp.h265.H265Packer;
 import media.core.rtp.h265.H265Packet;
 import media.core.rtp.h265.base.FUPosition;
 import org.junit.BeforeClass;
@@ -14,8 +14,8 @@ import static org.junit.Assert.assertTrue;
 
 public class HEVCTest {
 
-    H265Encoder h265Encoder = new H265Encoder();
-    H265Decoder h265Decoder = new H265Decoder();
+    H265Packer h265Packer = new H265Packer();
+    H265Unpacker h265Unpacker = new H265Unpacker();
 
     @BeforeClass
     public static void setUp ( ) {
@@ -50,31 +50,31 @@ public class HEVCTest {
     @Test
     public void NALUtest () {
         H265Packet hevcPacket = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        assertTrue(h265Decoder.handle(hevcPacket));
+        assertTrue(h265Unpacker.handle(hevcPacket));
     }
 
     @Test
     public void VPStest () {
         H265Packet hevcPacket = new H265Packet(rawVPSData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        assertTrue(h265Decoder.handle(hevcPacket));
+        assertTrue(h265Unpacker.handle(hevcPacket));
     }
 
     @Test
     public void SPStest () {
         H265Packet hevcPacket = new H265Packet(rawSPSData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        assertTrue(h265Decoder.handle(hevcPacket));
+        assertTrue(h265Unpacker.handle(hevcPacket));
     }
 
     @Test
     public void PPStest () {
         H265Packet hevcPacket = new H265Packet(rawPPSData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        assertTrue(h265Decoder.handle(hevcPacket));
+        assertTrue(h265Unpacker.handle(hevcPacket));
     }
 
     @Test
     public void SEItest () {
         H265Packet hevcPacket = new H265Packet(rawSEIData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        assertTrue(h265Decoder.handle(hevcPacket));
+        assertTrue(h265Unpacker.handle(hevcPacket));
     }
 
     @Test
@@ -82,27 +82,27 @@ public class HEVCTest {
         List<H265Packet> packetList = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
             H265Packet hevcPacket = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-            assertTrue(h265Decoder.handle(hevcPacket));
+            assertTrue(h265Unpacker.handle(hevcPacket));
             packetList.add(hevcPacket);
         }
 
-        H265Packet ap = h265Encoder.packApByList(packetList);
-        assertTrue(h265Decoder.handle(ap));
+        H265Packet ap = h265Packer.packApByList(packetList);
+        assertTrue(h265Unpacker.handle(ap));
     }
 
     @Test
     public void FUTest () {
         H265Packet hevcPacket1 = new H265Packet(rawFuData1, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        H265Packet fu1 = h265Encoder.packFu(hevcPacket1, FUPosition.START);
-        assertTrue(h265Decoder.handle(fu1));
+        H265Packet fu1 = h265Packer.packFu(hevcPacket1, FUPosition.START);
+        assertTrue(h265Unpacker.handle(fu1));
 
         H265Packet hevcPacket2 = new H265Packet(rawFuData2, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        H265Packet fu2 = h265Encoder.packFu(hevcPacket2, FUPosition.MIDDLE);
-        assertTrue(h265Decoder.handle(fu2));
+        H265Packet fu2 = h265Packer.packFu(hevcPacket2, FUPosition.MIDDLE);
+        assertTrue(h265Unpacker.handle(fu2));
 
         H265Packet hevcPacket3 = new H265Packet(rawFuData3, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        H265Packet fu3 = h265Encoder.packFu(hevcPacket3, FUPosition.END);
-        assertTrue(h265Decoder.handle(fu3));
+        H265Packet fu3 = h265Packer.packFu(hevcPacket3, FUPosition.END);
+        assertTrue(h265Unpacker.handle(fu3));
     }
 
     ///////////////////////////////////////////////////
@@ -150,8 +150,8 @@ public class HEVCTest {
     @Test
     public void APFailtest1_Packet_List_is_null () {
         List<H265Packet> packetList = new ArrayList<>();
-        H265Packet ap = h265Encoder.packApByList(packetList);
-        assertFalse(h265Decoder.handle(ap));
+        H265Packet ap = h265Packer.packApByList(packetList);
+        assertFalse(h265Unpacker.handle(ap));
     }
 
     /**
@@ -165,8 +165,8 @@ public class HEVCTest {
             packetList.add(hevcPacket);
         }
 
-        H265Packet ap = h265Encoder.packApByList(packetList);
-        assertFalse(h265Decoder.handle(ap));
+        H265Packet ap = h265Packer.packApByList(packetList);
+        assertFalse(h265Unpacker.handle(ap));
     }
 
     /**
@@ -177,20 +177,20 @@ public class HEVCTest {
         List<H265Packet> packetList = new ArrayList<>();
         for (int i = 0; i < 2; i++) {
             H265Packet hevcPacket = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-            h265Decoder.handle(hevcPacket);
+            h265Unpacker.handle(hevcPacket);
             packetList.add(hevcPacket);
         }
 
-        H265Packet ap = h265Encoder.packApByList(packetList);
-        h265Decoder.handle(ap);
+        H265Packet ap = h265Packer.packApByList(packetList);
+        h265Unpacker.handle(ap);
 
         List<H265Packet> packetList2 = new ArrayList<>();
         for (int i = 0; i < 2; i++) {
             packetList2.add(ap);
         }
 
-        H265Packet ap2 = h265Encoder.packApByList(packetList2);
-        assertFalse(h265Decoder.handle(ap2));
+        H265Packet ap2 = h265Packer.packApByList(packetList2);
+        assertFalse(h265Unpacker.handle(ap2));
     }
 
     /**
@@ -199,16 +199,16 @@ public class HEVCTest {
     @Test
     public void FUFailTest1_Unexpected_Position_Error_START_START_END () {
         H265Packet hevcPacket1 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        H265Packet fu1 = h265Encoder.packFu(hevcPacket1, FUPosition.START);
-        h265Decoder.handle(fu1);
+        H265Packet fu1 = h265Packer.packFu(hevcPacket1, FUPosition.START);
+        h265Unpacker.handle(fu1);
 
         H265Packet hevcPacket2 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        H265Packet fu2 = h265Encoder.packFu(hevcPacket2, FUPosition.START);
-        assertFalse(h265Decoder.handle(fu2));
+        H265Packet fu2 = h265Packer.packFu(hevcPacket2, FUPosition.START);
+        assertFalse(h265Unpacker.handle(fu2));
 
         H265Packet hevcPacket3 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        H265Packet fu3 = h265Encoder.packFu(hevcPacket3, FUPosition.END);
-        assertFalse(h265Decoder.handle(fu3));
+        H265Packet fu3 = h265Packer.packFu(hevcPacket3, FUPosition.END);
+        assertFalse(h265Unpacker.handle(fu3));
     }
 
     /**
@@ -217,11 +217,11 @@ public class HEVCTest {
     @Test
     public void FUFailTest2_START_RECV_OTHER_TYPE () {
         H265Packet hevcPacket1 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        H265Packet fu1 = h265Encoder.packFu(hevcPacket1, FUPosition.START);
-        h265Decoder.handle(fu1);
+        H265Packet fu1 = h265Packer.packFu(hevcPacket1, FUPosition.START);
+        h265Unpacker.handle(fu1);
 
         H265Packet hevcPacket2 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        assertFalse(h265Decoder.handle(hevcPacket2));
+        assertFalse(h265Unpacker.handle(hevcPacket2));
     }
 
     /**
@@ -230,15 +230,15 @@ public class HEVCTest {
     @Test
     public void FUFailTest3_MIDDLE_RECV_OTHER_TYPE () {
         H265Packet hevcPacket1 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        H265Packet fu1 = h265Encoder.packFu(hevcPacket1, FUPosition.START);
-        h265Decoder.handle(fu1);
+        H265Packet fu1 = h265Packer.packFu(hevcPacket1, FUPosition.START);
+        h265Unpacker.handle(fu1);
 
         H265Packet hevcPacket2 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        H265Packet fu2 = h265Encoder.packFu(hevcPacket2, FUPosition.MIDDLE);
-        h265Decoder.handle(fu2);
+        H265Packet fu2 = h265Packer.packFu(hevcPacket2, FUPosition.MIDDLE);
+        h265Unpacker.handle(fu2);
 
         H265Packet hevcPacket3 = new H265Packet(rawRtpData, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        assertFalse(h265Decoder.handle(hevcPacket3));
+        assertFalse(h265Unpacker.handle(hevcPacket3));
     }
 
     /**
@@ -247,7 +247,7 @@ public class HEVCTest {
     @Test
     public void FUFailTest4_S1_E1 () {
         H265Packet hevcPacket1 = new H265Packet(rawFuData4_S1_E1, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        assertFalse(h265Decoder.handle(hevcPacket1));
+        assertFalse(h265Unpacker.handle(hevcPacket1));
     }
 
     /**
@@ -256,10 +256,10 @@ public class HEVCTest {
     @Test
     public void FUFailTest5_Nested () {
         H265Packet hevcPacket1 = new H265Packet(rawFuData1, RtpPacket.RTP_PACKET_MAX_SIZE, true);
-        h265Decoder.handle(hevcPacket1);
+        h265Unpacker.handle(hevcPacket1);
 
-        H265Packet fu = h265Encoder.packFu(hevcPacket1, FUPosition.START);
-        assertFalse(h265Decoder.handle(fu));
+        H265Packet fu = h265Packer.packFu(hevcPacket1, FUPosition.START);
+        assertFalse(h265Unpacker.handle(fu));
     }
 
     ///////////////////////////////////////////////////

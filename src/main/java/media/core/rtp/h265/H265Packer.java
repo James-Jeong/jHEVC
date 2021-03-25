@@ -9,11 +9,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-public class H265Encoder {
+public class H265Packer {
 
-    private static final Logger logger = LoggerFactory.getLogger(H265Encoder.class);
+    private static final Logger logger = LoggerFactory.getLogger(H265Packer.class);
 
-    public H265Encoder() {
+    public H265Packer() {
         // Nothing
     }
 
